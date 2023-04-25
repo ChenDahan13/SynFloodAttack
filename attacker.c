@@ -1,27 +1,33 @@
-#include <arpa/inet.h>
 #include <errno.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/ip_icmp.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h> // gettimeofday()
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h> // gettimeofday()
-#include <sys/types.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 
-#define DEST_IP "8.8.8.8"
-#define IP4_HDRLEN 20
-#define ICMP_HDRLEN 8
-#define BUFFER_SIZE 100
+#define SRC_ADDR "127.0.0.1"
+#define DEST_ADDR "8.8.8.8"
+#define SRC_PORT 5000
+#define DEST_PORT 80
 
-// Create icmp packet and returns the size of the packet
-int packetCreate(char *packet, int seq);
+// Create the IP header
+void setIpHeader(struct iphdr *ip_header);
 // Checksum calculate
 unsigned short calculate_checksum(unsigned short *paddress, int len);
 
 
+struct pseudo_header {
+    uint32_t source_address; // Source IP address
+    uint32_t dest_address; // Destination IP address
+    uint8_t reserved; // These bytes are not used just buffer
+    uint8_t protocol; // The protocol
+    uint16_t tcp_length; // the length of the segment
+    struct tcphdr tcp; // TCP header
+};
 
 // Checksum calculate
 unsigned short calculate_checksum(unsigned short *paddress, int len)
@@ -51,80 +57,90 @@ unsigned short calculate_checksum(unsigned short *paddress, int len)
     return answer;
 }
 
-
-
-// Create packet
-int packetCreate(char *packet, int seq) {
-
-    struct icmp icmphdr; // ICMP header
-    char data[BUFFER_SIZE] = "Syn";
-    int datalen = strlen(data) + 1;
+// Create the IP header
+void setIpHeader(struct iphdr *ip_header) {
     
-    // Message type (8 bits): echo request
-    icmphdr.icmp_type = ICMP_ECHO;
-    // Message code (8 bits): echo request
-    icmphdr.icmp_code = 0;
-    // Identifier (16 bits): some number to trace the response
-    icmphdr.icmp_id = 18;
-    // Sequence number (16 bits)
-    icmphdr.icmp_seq = seq;
-    // ICMP header checksum (16 bits): set to 0 not to include into checksum calculation
-    icmphdr.icmp_cksum = 0;
-
-    // Put the ICMP header in the packet
-    memcpy((packet), &icmphdr, ICMP_HDRLEN);
-    // Put the ICMP data in the packet
-    memcpy(packet + ICMP_HDRLEN, data, datalen);
-    // Calculate the ICMP header checksum
-    icmphdr.icmp_cksum = calculate_checksum((unsigned short *)(packet), ICMP_HDRLEN + datalen);
-    memcpy((packet), &icmphdr, ICMP_HDRLEN);
-
-    return ICMP_HDRLEN + datalen;
+    (*ip_header).ihl = 5;
+    (*ip_header).version = 4;
+    (*ip_header).tos = 0;
+    (*ip_header).tot_len = sizeof(struct iphdr) + sizeof(struct tcphdr);
+    (*ip_header).id = htons(54321);
+    (*ip_header).frag_off = htons(0);
+    (*ip_header).ttl = 255;
+    (*ip_header).protocol = IPPROTO_TCP;
+    (*ip_header).check = 0;
+    (*ip_header).saddr = inet_addr(SRC_ADDR);
+    (*ip_header).daddr = inet_addr(DEST_ADDR);
 }
 
+// Create the TCP header 
+void setTcpHeader(struct tcphdr *tcp_header, int seq) {
 
+    (*tcp_header).th_sport = htons(SRC_PORT);
+    (*tcp_header).th_dport = htons(DEST_PORT);
+    (*tcp_header).th_seq = htonl(seq);
+    (*tcp_header).th_ack = 0;
+    (*tcp_header).th_off = 5;
+    (*tcp_header).th_x2 = 0;
+    (*tcp_header).th_flags = TH_SYN;
+    (*tcp_header).window = htons(5840);
+    (*tcp_header).check = 0;
+    (*tcp_header).urg_ptr = 0;
+}
+
+void pseudoHeaderTcpChecksum(struct iphdr *ip_header, struct tcphdr *tcp_header) {
+    
+    // Calculate the TCP checksum
+    struct pseudo_header psh;
+    psh.source_address = (*ip_header).saddr;
+    psh.dest_address = (*ip_header).daddr;
+    psh.reserved = 0;
+    psh.protocol = IPPROTO_TCP;
+    psh.tcp_length = htons(sizeof(struct tcphdr));
+    memcpy(&psh.tcp, tcp_header, sizeof(struct tcphdr));
+    (*tcp_header).check = calculate_checksum((uint16_t *)&psh, sizeof(struct pseudo_header) + sizeof(struct tcphdr));
+}
 
 int main() {
-    struct sockaddr_in dest_in;
-    memset(&dest_in, 0, sizeof(struct sockaddr_in));
-    dest_in.sin_family = AF_INET; // IPv4
-    dest_in.sin_addr.s_addr = inet_addr(DEST_IP);
 
-    // Create raw socket for IP-RAW
-    int sock = -1;
-    sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if(sock == -1) {
-        fprintf(stderr, "socket() failed with error: %d", errno);
-        fprintf(stderr, "To create a raw socket, the process needs to be run by Admin/root user.\n\n");
-        return -1;
+    // Create a raw socket
+    int sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sock < 0) {
+        perror("socket() failed\n");
+        return 1;
     }
 
-    int countSeq;
-    char packet[BUFFER_SIZE];
+    struct iphdr ip_header; // Protocol IP struct
+    struct tcphdr tcp_header; // Protocol TCP struct
 
-    struct timeval start, end;
-    gettimeofday(&start, 0);
+    // Set the destination address
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(DEST_PORT);
+    dest_addr.sin_addr.s_addr = inet_addr(DEST_ADDR);
+
+    for(int i = 0; i < 10; i++) {
+        
+        // Set all the headers
+        setIpHeader(&ip_header);
+        setTcpHeader(&tcp_header, i);
+        pseudoHeaderTcpChecksum(&ip_header, &tcp_header);
+        
+        // Combine the IP and TCP headers
+        char packet[sizeof(struct iphdr) + sizeof(struct tcphdr)];
+        memcpy(packet, &ip_header, sizeof(struct iphdr));
+        memcpy(packet + sizeof(struct iphdr), &tcp_header, sizeof(struct tcphdr));
 
 
-    // Sending 100 syn packets
-    for(countSeq = 0; countSeq < 100; countSeq++) {
-        // Create packet
-        int packetLen = packetCreate(packet, countSeq);
         // Send the packet
-        int bytes_sent = sendto(sock, packet, packetLen, 0, (struct sockaddr *)&dest_in, sizeof(dest_in));
-        if (bytes_sent == -1){
-            fprintf(stderr, "sendto() failed with error: %d\n", errno);
-            return -1;
+        int sent = sendto(sock, packet, sizeof(packet), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (sent < 0) {
+            perror("sendto() failed\n");
+            return 1;
         }
-        printf("Successfully sent one packet \n");
+        printf("Sent packet. Length: %d\n", sent);
+        memset(packet, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
     }
-    gettimeofday(&end, 0);
-    
-    // Calculate the time of the attack
-    float time = (end.tv_sec - start.tv_sec) * 1000.0f + (end.tv_usec - start.tv_usec) / 1000.0f;
-    printf("Time of the attack: %0.3fms\n", time);
 
-    close(sock);
-    
     return 0;
 }
