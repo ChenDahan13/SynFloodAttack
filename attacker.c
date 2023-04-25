@@ -10,8 +10,8 @@
 #include <unistd.h>
 
 #define SRC_ADDR "127.0.0.1"
+
 #define DEST_ADDR "8.8.8.8"
-#define SRC_PORT 5000
 #define DEST_PORT 80
 
 // Create the IP header
@@ -65,7 +65,7 @@ void setIpHeader(struct iphdr *ip_header) {
     (*ip_header).tos = 0;
     (*ip_header).tot_len = sizeof(struct iphdr) + sizeof(struct tcphdr);
     (*ip_header).id = htons(54321);
-    (*ip_header).frag_off = htons(0);
+    (*ip_header).frag_off = 0;
     (*ip_header).ttl = 255;
     (*ip_header).protocol = IPPROTO_TCP;
     (*ip_header).check = 0;
@@ -76,16 +76,16 @@ void setIpHeader(struct iphdr *ip_header) {
 // Create the TCP header 
 void setTcpHeader(struct tcphdr *tcp_header, int seq) {
 
-    (*tcp_header).th_sport = htons(SRC_PORT);
+    (*tcp_header).th_sport = htons(random() % 65535); // Randomize source port
     (*tcp_header).th_dport = htons(DEST_PORT);
     (*tcp_header).th_seq = htonl(seq);
     (*tcp_header).th_ack = 0;
     (*tcp_header).th_off = 5;
     (*tcp_header).th_x2 = 0;
     (*tcp_header).th_flags = TH_SYN;
-    (*tcp_header).window = htons(5840);
-    (*tcp_header).check = 0;
-    (*tcp_header).urg_ptr = 0;
+    (*tcp_header).th_win = htons(5840);
+    (*tcp_header).th_sum = 0;
+    (*tcp_header).th_urp = 0;
 }
 
 void pseudoHeaderTcpChecksum(struct iphdr *ip_header, struct tcphdr *tcp_header) {
@@ -110,6 +110,12 @@ int main() {
         return 1;
     }
 
+    int on = 1;
+    if(setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) == -1) {
+        perror("setsockopt() failed\n");
+        return 1;
+    }
+
     struct iphdr ip_header; // Protocol IP struct
     struct tcphdr tcp_header; // Protocol TCP struct
 
@@ -119,7 +125,11 @@ int main() {
     dest_addr.sin_port = htons(DEST_PORT);
     dest_addr.sin_addr.s_addr = inet_addr(DEST_ADDR);
 
+    char packet[sizeof(struct iphdr) + sizeof(struct tcphdr)];
+
     for(int i = 0; i < 10; i++) {
+
+        memset(packet, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
         
         // Set all the headers
         setIpHeader(&ip_header);
@@ -127,7 +137,6 @@ int main() {
         pseudoHeaderTcpChecksum(&ip_header, &tcp_header);
         
         // Combine the IP and TCP headers
-        char packet[sizeof(struct iphdr) + sizeof(struct tcphdr)];
         memcpy(packet, &ip_header, sizeof(struct iphdr));
         memcpy(packet + sizeof(struct iphdr), &tcp_header, sizeof(struct tcphdr));
 
@@ -139,8 +148,9 @@ int main() {
             return 1;
         }
         printf("Sent packet. Length: %d\n", sent);
-        memset(packet, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
+        
     }
 
+    close(sock);
     return 0;
 }
