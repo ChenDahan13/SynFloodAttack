@@ -82,6 +82,7 @@ int packetCreate(char *packet, int seq) {
 
 int main() {
 
+    // Set the destination address
     struct sockaddr_in dest_in;
     memset(&dest_in, 0, sizeof(struct sockaddr_in));
     dest_in.sin_family = AF_INET; // IPv4
@@ -95,10 +96,21 @@ int main() {
         fprintf(stderr, "To create a raw socket, the process needs to be run by Admin/root user.\n\n");
         return -1;
     }
+    printf("Socket() succeded\n");
+
+    // Open file
+    FILE *file = fopen("pings_result_c.txt", "w");
+    if(file == NULL) {
+        printf("Fopen() failed\n");
+        return -1;
+    }
+    printf("Fopen succeded\n");
     
 
-    int countSeq = 0;
+    int countSeq = 1;
     char packet[IP_MAXPACKET];
+
+    float ping_time = 0;
 
     while (1) {
         // Create packet
@@ -113,7 +125,9 @@ int main() {
             fprintf(stderr, "sendto() failed with error: %d\n", errno);
             return -1;
         }
-        printf("Successfully sent one packet \n");
+        printf("Successfully sent ping request number: %d\n", countSeq);
+
+        fprintf(file, "Ping request number %d was sent.\n", countSeq);
 
         // Get the ping response
         bzero(packet, IP_MAXPACKET);
@@ -138,12 +152,18 @@ int main() {
         unsigned long microseconds = (end.tv_sec - start.tv_sec) * 1000.0f + (end.tv_usec - start.tv_usec);
         float time = (end.tv_sec - start.tv_sec) * 1000.0f + (end.tv_usec - start.tv_usec) / 1000.0f;
         printf("   %ld bytes from %s: seq: %d time: %0.3fms\n", bytes_received, DESTINATION_IP, countSeq, time);
+        ping_time += time;
 
         countSeq++;
         bzero(packet, IP_MAXPACKET);
         sleep(1);
 
     } 
+
+    fprintf(file, "Average ping's RTT: %f", ping_time / countSeq);
+
+    // Close the file
+    fclose(file);
     // Close the raw socket 
     close(sock);
     return 0;
