@@ -10,6 +10,8 @@
 #include <sys/time.h> // gettimeofday()
 #include <sys/types.h>
 #include <unistd.h>
+#include "supportLib.h"
+#include "pbPlots.h"
 
 #define IP4_HDRLEN 20
 #define ICMP_HDRLEN 8
@@ -83,6 +85,11 @@ int packetCreate(char *packet, int seq) {
 }
 
 int main() {
+
+    double x[NUM_PING_REQ];
+    double y[NUM_PING_REQ];
+
+    RGBABitmapImageReference *imageref = CreateRGBABitmapImageReference(); // Create image reference
 
     // Set the destination address
     struct sockaddr_in dest_in;
@@ -159,9 +166,29 @@ int main() {
         countSeq++;
         bzero(packet, IP_MAXPACKET);
 
+        // Add the packet number and time sending it to the axises
+        x[i] = time;
+        y[i] = i;
+
     } 
 
     fprintf(file, "Average ping's RTT: %f", ping_time / countSeq);
+
+    StringReference *errormessage = CreateStringReference(L"", 0);
+    // Set the image 
+    bool success = DrawScatterPlot(imageref, 800, 600, x, NUM_PING_REQ, y, NUM_PING_REQ, errormessage);
+   
+    if(success) {
+        // Convert the data to png image
+        size_t length;
+        double *pngdata = ConvertToPNG(&length, imageref->image);
+        WriteToFile(pngdata, length, "Syn_pkts_p.png");
+        DeleteImage(imageref->image);
+    } else {
+        printf("DrawScatterPlot() failed\n");
+        return 1;
+    }
+    FreeAllocations();
 
     // Close the file
     fclose(file);
