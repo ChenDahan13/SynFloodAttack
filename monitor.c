@@ -17,6 +17,8 @@
 #define SOURCE_IP "10.0.2.0"
 #define DESTINATION_IP "8.8.8.8"
 
+#define NUM_PING_REQ 10
+
 
 // Checksum calculate
 unsigned short calculate_checksum(unsigned short *paddress, int len);
@@ -112,7 +114,7 @@ int main() {
 
     float ping_time = 0;
 
-    while (1) {
+    for(int i = 0; i < NUM_PING_REQ; i++) {
         // Create packet
         int packetLen = packetCreate(packet, countSeq);
         
@@ -156,7 +158,6 @@ int main() {
 
         countSeq++;
         bzero(packet, IP_MAXPACKET);
-        sleep(1);
 
     } 
 
