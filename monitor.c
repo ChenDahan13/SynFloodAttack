@@ -10,13 +10,11 @@
 #include <sys/time.h> // gettimeofday()
 #include <sys/types.h>
 #include <unistd.h>
-#include "supportLib.h"
-#include "pbPlots.h"
 
 #define IP4_HDRLEN 20
 #define ICMP_HDRLEN 8
 
-#define SOURCE_IP "10.0.2.0"
+#define SOURCE_IP "10.9.0.3"
 #define DESTINATION_IP "8.8.8.8"
 
 #define NUM_PING_REQ 10
@@ -86,11 +84,6 @@ int packetCreate(char *packet, int seq) {
 
 int main() {
 
-    double x[NUM_PING_REQ];
-    double y[NUM_PING_REQ];
-
-    RGBABitmapImageReference *imageref = CreateRGBABitmapImageReference(); // Create image reference
-
     // Set the destination address
     struct sockaddr_in dest_in;
     memset(&dest_in, 0, sizeof(struct sockaddr_in));
@@ -108,7 +101,7 @@ int main() {
     printf("Socket() succeded\n");
 
     // Open file
-    FILE *file = fopen("pings_result_c.txt", "w");
+    FILE *file = fopen("pings_results_c.txt", "w");
     if(file == NULL) {
         printf("Fopen() failed\n");
         return -1;
@@ -136,8 +129,6 @@ int main() {
         }
         printf("Successfully sent ping request number: %d\n", countSeq);
 
-        fprintf(file, "Ping request number %d was sent.\n", countSeq);
-
         // Get the ping response
         bzero(packet, IP_MAXPACKET);
         socklen_t len = sizeof(dest_in);
@@ -162,33 +153,14 @@ int main() {
         float time = (end.tv_sec - start.tv_sec) * 1000.0f + (end.tv_usec - start.tv_usec) / 1000.0f;
         printf("   %ld bytes from %s: seq: %d time: %0.3fms\n", bytes_received, DESTINATION_IP, countSeq, time);
         ping_time += time;
+        // Write to file
+        fprintf(file, "%d %f\n", countSeq, time);
 
         countSeq++;
         bzero(packet, IP_MAXPACKET);
-
-        // Add the packet number and time sending it to the axises
-        x[i] = time;
-        y[i] = i;
-
     } 
 
     fprintf(file, "Average ping's RTT: %f", ping_time / countSeq);
-
-    StringReference *errormessage = CreateStringReference(L"", 0);
-    // Set the image 
-    bool success = DrawScatterPlot(imageref, 800, 600, x, NUM_PING_REQ, y, NUM_PING_REQ, errormessage);
-   
-    if(success) {
-        // Convert the data to png image
-        size_t length;
-        double *pngdata = ConvertToPNG(&length, imageref->image);
-        WriteToFile(pngdata, length, "Syn_pkts_p.png");
-        DeleteImage(imageref->image);
-    } else {
-        printf("DrawScatterPlot() failed\n");
-        return 1;
-    }
-    FreeAllocations();
 
     // Close the file
     fclose(file);
