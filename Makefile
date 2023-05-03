@@ -1,10 +1,10 @@
 all: attacker monitor 
 
-attacker: attacker.c pbPlots.c supportLib.c
-	gcc attacker.c pbPlots.c supportLib.c -lm -o attacker
+attacker: attacker.c 
+	gcc attacker.c -o attacker
 
-monitor: monitor.c pbPlots.c supportLib.c
-	gcc monitor.c pbPlots.c supportLib.c -lm -o monitor
+monitor: monitor.c 
+	gcc monitor.c -o monitor
 
 clean:
-	rm attacker monitor pbPlot supportLib
+	rm attacker monitor 

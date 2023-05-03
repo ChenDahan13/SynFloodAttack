@@ -18,6 +18,11 @@
 
 // Create the IP header
 void setIpHeader(struct iphdr *ip_header);
+// Create the TCP header 
+void setTcpHeader(struct tcphdr *tcp_header, int seq);
+
+void pseudoHeaderTcpChecksum(struct iphdr *ip_header, struct tcphdr *tcp_header);
+
 // Checksum calculate
 unsigned short calculate_checksum(unsigned short *paddress, int len);
 
@@ -91,7 +96,7 @@ void setTcpHeader(struct tcphdr *tcp_header, int seq) {
 }
 
 void pseudoHeaderTcpChecksum(struct iphdr *ip_header, struct tcphdr *tcp_header) {
-    
+
     // Calculate the TCP checksum
     struct pseudo_header psh;
     psh.source_address = (*ip_header).saddr;
